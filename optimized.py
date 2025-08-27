@@ -1,63 +1,74 @@
 import csv
 
-BUDGET = 500
-CSV_FILE = "actions_list.csv"
+CSV_FILE = "dataset_2.csv"
+# CSV_FILE = "actions_list.csv"
 
 
 def read_csv(filename):
     """Reads the CSV file and returns a list of actions in dictionary form"""
     actions = []
-    with open(filename, newline='', encoding="utf-8") as csvfile:
-        reader = csv.DictReader(csvfile)
+    with open(filename, 'r', encoding='utf-8', newline='') as csvfile:
+        reader = csv.reader(csvfile)
+        next(reader)  # ignore header
         for row in reader:
-            cost = float(row["Coût par action (en euros)"])
-            profit_percent = float(row["Bénéfice (après 2 ans)"].replace("%", "")) / 100
-            benefit = cost * profit_percent
-            actions.append({
-                "name": row["Actions #"],
-                "cost": cost,
-                "benefit": benefit
-            })
+            try:
+                cost = float(row[1])
+                profit_percent = float(row[2].replace("%", "")) / 100 if "%" in row[2] else float(row[2]) / 100
+                benefit = cost * profit_percent
+
+                # ⚠️ On ignore les actions incohérentes
+                if cost > 0 and benefit > 0:
+                    actions.append({
+                        "name": row[0],
+                        "cost": cost,
+                        "benefit": benefit
+                    })
+            except ValueError:
+                continue  # ignore lignes invalides
     return actions
 
 
-def optimized_knapsack(actions, budget):
-    """Optimized Backpack Algorithm (DP)"""
+def optimized_knapsack_fast(actions, budget):
+    """Knapsack optimisé avec tableau 1D (mémoire réduite)"""
+    budget_cents = int(budget * 100)
     n = len(actions)
 
-    # DP matrix (n+1 x budget+1)
-    dp = [[0 for _ in range(budget + 1)] for _ in range(n + 1)]
+    # tableau DP 1D
+    dp = [0] * (budget_cents + 1)
+    keep = [[False] * (budget_cents + 1) for _ in range(n)]  # pour reconstruire la solution
 
-    # Filling
-    for i in range(1, n + 1):
-        for w in range(1, budget + 1):
-            cost = int(actions[i - 1]["cost"])
-            benefit = actions[i - 1]["benefit"]
+    for i in range(n):
+        cost_cents = int(actions[i]["cost"] * 100)
+        benefit = actions[i]["benefit"]
 
-            if cost <= w:
-                dp[i][w] = max(benefit + dp[i - 1][w - cost], dp[i - 1][w])
-            else:
-                dp[i][w] = dp[i - 1][w]
+        # ⚠️ remplir à rebours pour éviter d’écraser les calculs
+        for w in range(budget_cents, cost_cents - 1, -1):
+            if benefit + dp[w - cost_cents] > dp[w]:
+                dp[w] = benefit + dp[w - cost_cents]
+                keep[i][w] = True
 
-    # Reconstruction of the selected actions
-    w = budget
-    chosen_actions = []
-    for i in range(n, 0, -1):
-        if dp[i][w] != dp[i - 1][w]:
-            chosen_actions.append(actions[i - 1])
-            w -= int(actions[i - 1]["cost"])
+    # Reconstruction de la solution
+    w = budget_cents
+    selected_actions = []
+    for i in range(n - 1, -1, -1):
+        if keep[i][w]:
+            selected_actions.append(actions[i])
+            w -= int(actions[i]["cost"] * 100)
 
-    return chosen_actions, dp[n][budget]
+    total_cost = sum(a["cost"] for a in selected_actions)
+    total_benefit = dp[budget_cents]
+
+    return selected_actions, total_cost, total_benefit
 
 
 if __name__ == "__main__":
     actions = read_csv(CSV_FILE)
-    best_combination, best_profit = optimized_knapsack(actions, BUDGET)
+    budget = 500  # budget en €
+    selected, cost, benefit = optimized_knapsack_fast(actions, budget)
 
-    print("Meilleure combinaison d'actions :")
-    for action in best_combination:
-        print(f"- {action['name']} | Coût: {action['cost']:.2f} € | Bénéfice: {action['benefit']:.2f} €")
+    print("Actions sélectionnées :")
+    for action in selected:
+        print(f"- {action['name']} | Coût: {action['cost']} € | Bénéfice: {action['benefit']:.2f} €")
 
-    total_cost = sum(a["cost"] for a in best_combination)
-    print(f"\nCoût total: {total_cost:.2f} €")
-    print(f"Bénéfice total après 2 ans: {best_profit:.2f} €")
+    print(f"\nCoût total = {cost:.2f} € (budget max = {budget} €)")
+    print(f"Bénéfice total = {benefit:.2f} €")
